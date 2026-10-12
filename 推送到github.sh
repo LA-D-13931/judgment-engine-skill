@@ -50,4 +50,8 @@ git ls-remote --heads origin "$BRANCH" >/dev/null 2>&1 \
   && echo "✓ 远程已能看到 $BRANCH" \
   || { echo "✗ 推完却读不到远程分支——以这条为准，推送不算成功" >&2; exit 1; }
 echo
-echo "✓ 完成：$REMOTE （分支 $BRANCH）"
+# 注意：变量名后用全角括号/标点时**必须加花括号**。
+# bash 按字节解析标识符，UTF-8 的高位字节会被当成变量名的一部分，
+# 于是 `$BRANCH）` 变成「名为 BRANCH）的变量」，`set -u` 下直接退出 1 ——
+# 而推送其实已经成功了。**退出码与事实相反**，正是本项目最忌讳的那种假信号。
+echo "✓ 完成：${REMOTE} （分支 ${BRANCH}）"
