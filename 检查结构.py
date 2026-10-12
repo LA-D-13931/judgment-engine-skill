@@ -129,16 +129,24 @@ def check_skill(dirpath, want_name='judgment-engine'):
 
 
 def check_installed():
-    """返回 (状态, 说明)。状态 ∈ {'ok','not-installed','broken','stale'}。"""
+    """返回 (状态, 说明)。状态 ∈ {'ok','not-installed','broken','other-copy'}。
+
+    `other-copy` 是个**独立状态**，不是失败：你手上这一份源**不是**已安装的那一份
+    （典型场景：从 GitHub 下载了第二个副本、或在别处 clone 了一份来跑检查）。
+    这时候既不能说"装对了"，也不能说"装坏了"——只能如实说**没验成**。
+    之所以要单列，是因为干净房间测试里它曾经退 1：一个下载副本跑自己的检查器
+    却报"失败"，那是**假红**，会把人引去修一个不存在的问题。
+    """
     if not os.path.lexists(INSTALLED):
         return 'not-installed', '未安装：%s 不存在' % INSTALLED
     if not os.path.islink(INSTALLED):
         return 'ok', '已安装（实体目录，非软链）：%s' % INSTALLED
     target = os.path.realpath(INSTALLED)
-    if target != os.path.realpath(SRC):
-        return 'stale', '软链指向别处：%s → %s（源在 %s）' % (INSTALLED, target, SRC)
     if not os.path.isfile(os.path.join(target, 'SKILL.md')):
         return 'broken', '软链断了：%s → %s 里没有 SKILL.md' % (INSTALLED, target)
+    if target != os.path.realpath(SRC):
+        return 'other-copy', ('已安装的是**另一份副本**：%s → %s（本份源在 %s）'
+                              % (INSTALLED, target, SRC))
     return 'ok', '软链正确：%s → %s' % (INSTALLED, target)
 
 
@@ -207,7 +215,7 @@ def main():
         print('  ✓ 源结构通过（frontmatter 合法、name kebab-case、description 带反例边界）')
 
     state, note = check_installed()
-    print('  %s 安装态：%s' % ({'ok': '✓', 'not-installed': '–', 'stale': '✗',
+    print('  %s 安装态：%s' % ({'ok': '✓', 'not-installed': '–', 'other-copy': '–',
                                'broken': '✗'}[state], note))
 
     if problems:
@@ -217,8 +225,12 @@ def main():
         print('\n结论：结构 ✓，但**安装态没验成**（退出码 2）——'
               '软链到 ~/.agents/skills 之前，它在 DSH 里不可见。')
         return 2
-    if state in ('stale', 'broken'):
-        print('\n结论：结构 ✓，安装态 ✗（退出码 1）')
+    if state == 'other-copy':
+        print('\n结论：结构 ✓，但**安装态没验成**（退出码 2）——'
+              '本份源并不是已安装的那一份。要装它，先删旧软链再重建。')
+        return 2
+    if state == 'broken':
+        print('\n结论：结构 ✓，安装态 ✗（退出码 1）——软链断了，去重建。')
         return 1
     print('\n结论：结构与安装态都通过（退出码 0）')
     return 0
