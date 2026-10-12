@@ -38,11 +38,25 @@ git -C "$ENGINE" rev-parse --short HEAD 2>/dev/null \
 
 ```bash
 git clone https://github.com/LA-D-13931/verifiable-content-engine.git
-# 或者（只读、免 clone）
+
+# 或者（只读、免 clone）——**注意下面这条 caveat**
 curl -sSL -o /tmp/engine.tgz \
   "https://codeload.github.com/LA-D-13931/verifiable-content-engine/tar.gz/refs/heads/main" \
   && tar xzf /tmp/engine.tgz
 ```
+
+⚠️ **tarball 按「分支名」取会拿到缓存里的陈旧快照。** 2026-10-12 实测：
+按 `main` 取的包比按 commit SHA 取的**小了一个提交的量**，加查询参数也不刷新；
+换成**按 commit SHA 取**立刻拿到最新内容（sha256 与源一致）：
+
+```bash
+SHA=$(git -C "$ENGINE" rev-parse HEAD)   # 或从 GitHub 页面上的 commit 复制
+curl -sSL -o /tmp/engine.tgz \
+  "https://codeload.github.com/LA-D-13931/verifiable-content-engine/tar.gz/$SHA"
+```
+
+**所以第 1 步的"报出版本"不是仪式**：它是你唯一能发现"手里这份是旧快照"的手段。
+拿到 tarball 之后先 `git log -1`（或看 `dist/` 里的文件名）确认版本，**再**下结论。
 
 ## 2. 第 0 步：先看缺什么，再谈结论
 
