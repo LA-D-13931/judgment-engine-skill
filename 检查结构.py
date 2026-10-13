@@ -128,19 +128,36 @@ def check_skill(dirpath, want_name='judgment-engine'):
     return problems
 
 
-def check_installed():
-    """返回 (状态, 说明)。状态 ∈ {'ok','not-installed','broken','other-copy'}。
+def _sha(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        h.update(f.read())
+    return h.hexdigest()
 
-    `other-copy` 是个**独立状态**，不是失败：你手上这一份源**不是**已安装的那一份
-    （典型场景：从 GitHub 下载了第二个副本、或在别处 clone 了一份来跑检查）。
-    这时候既不能说"装对了"，也不能说"装坏了"——只能如实说**没验成**。
-    之所以要单列，是因为干净房间测试里它曾经退 1：一个下载副本跑自己的检查器
-    却报"失败"，那是**假红**，会把人引去修一个不存在的问题。
+
+def check_installed():
+    """返回 (状态, 说明)。状态 ∈ {'ok','ok-copy','not-installed','broken','other-copy','stale-copy'}。
+
+    2026-10-13 补 `stale-copy`：**实体目录**过去一律判 ✓，于是漏掉了最坏的一种情况——
+    有人把从 GitHub 下载的副本装进同一个用户级根，**覆盖掉了开发用的软链**，
+    此后在源仓库里改任何东西都不生效，而且界面上完全看不出来。
+    本机真实发生过：10-12 21:49 的下载副本盖掉 21:34 的软链，第二天照旧版跑出报告。
     """
+    src_md = os.path.join(SRC, 'SKILL.md')
     if not os.path.lexists(INSTALLED):
         return 'not-installed', '未安装：%s 不存在' % INSTALLED
     if not os.path.islink(INSTALLED):
-        return 'ok', '已安装（实体目录，非软链）：%s' % INSTALLED
+        inst_md = os.path.join(INSTALLED, 'SKILL.md')
+        if not os.path.isfile(inst_md):
+            return 'broken', '安装位是实体目录但里面没有 SKILL.md：%s' % INSTALLED
+        if _sha(inst_md) != _sha(src_md):
+            return 'stale-copy', (
+                '安装的是**另一份副本且内容与源不一致**（%s）—— '
+                '在源仓库里的改动**不会生效**。要么删掉它重建软链，要么把源同步过去。'
+                % INSTALLED)
+        return 'ok-copy', ('已安装：实体目录（**副本**，非软链），内容与源一致 —— '
+                           '注意它是快照，源改了要重新同步：%s' % INSTALLED)
     target = os.path.realpath(INSTALLED)
     if not os.path.isfile(os.path.join(target, 'SKILL.md')):
         return 'broken', '软链断了：%s → %s 里没有 SKILL.md' % (INSTALLED, target)
@@ -215,7 +232,8 @@ def main():
         print('  ✓ 源结构通过（frontmatter 合法、name kebab-case、description 带反例边界）')
 
     state, note = check_installed()
-    print('  %s 安装态：%s' % ({'ok': '✓', 'not-installed': '–', 'other-copy': '–',
+    print('  %s 安装态：%s' % ({'ok': '✓', 'ok-copy': '✓', 'not-installed': '–',
+                               'other-copy': '–', 'stale-copy': '✗',
                                'broken': '✗'}[state], note))
 
     if problems:
@@ -229,6 +247,11 @@ def main():
         print('\n结论：结构 ✓，但**安装态没验成**（退出码 2）——'
               '本份源并不是已安装的那一份。要装它，先删旧软链再重建。')
         return 2
+    if state == 'stale-copy':
+        print('\n结论：安装态 ✗（退出码 1）——**装的那份与源不一致，你的改动不生效**。'
+              '修法：rm -rf ~/.agents/skills/judgment-engine && '
+              'ln -s "$PWD/skills/judgment-engine" ~/.agents/skills/judgment-engine')
+        return 1
     if state == 'broken':
         print('\n结论：结构 ✓，安装态 ✗（退出码 1）——软链断了，去重建。')
         return 1
